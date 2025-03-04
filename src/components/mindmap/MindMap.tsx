@@ -1,4 +1,5 @@
-import { useCallback, useState } from 'react';
+
+import { useState } from 'react';
 import {
   ReactFlow,
   MiniMap,
@@ -6,325 +7,220 @@ import {
   Background,
   useNodesState,
   useEdgesState,
-  addEdge,
-  Connection,
-  Edge,
-  MarkerType,
   NodeTypes,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { BaseNode } from './BaseNode';
-import { MindMapNode, BaseNodeData } from './types';
+import { SectionNode } from './node-components/SectionNode';
+import { ChecklistNode } from './node-components/ChecklistNode';
+import { TimelineNode } from './node-components/TimelineNode';
+import { ResourceNode } from './node-components/ResourceNode';
+import { CircleNode } from './node-components/CircleNode';
+import { RectangleNode } from './node-components/RectangleNode';
+import { SquareNode } from './node-components/SquareNode';
+import { TriangleNode } from './node-components/TriangleNode';
+import { EdgeSettings } from './EdgeSettings';
+import { initialNodes, initialEdges } from './MindMapInitialData';
+import { MindMapTopBar } from './MindMapTopBar';
+import { MindMapDeleteDialog } from './MindMapDeleteDialog';
+import { useMindMapKeyboardHandlers } from './MindMapKeyboardHandlers';
+import { useMindMapStorage } from './MindMapStorage';
 import { ComponentsSidebar } from './ComponentsSidebar';
+import { AdvancedComponentsSidebar } from './AdvancedComponentsSidebar';
 import { SidebarProvider } from '@/components/ui/sidebar';
-import { Button } from '@/components/ui/button';
-import { Plus, Trash2, Share2 } from 'lucide-react';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { saveMindMap, loadMindMap, getAllMindMaps, deleteMindMap } from '@/utils/mindmapStorage';
-import { useToast } from '@/hooks/use-toast';
+import { useMindMapNodeHandlers } from './hooks/useMindMapNodeHandlers';
+import { useMindMapEdgeHandlers } from './hooks/useMindMapEdgeHandlers';
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Settings } from 'lucide-react';
+import { TimelineSettings } from './settings/TimelineSettings';
+import { ChecklistSettings } from './settings/ChecklistSettings';
+import { ResourceSettings } from './settings/ResourceSettings';
+import { ShapeSettings } from './settings/ShapeSettings';
 
 const nodeTypes: NodeTypes = {
   base: BaseNode,
+  section: SectionNode,
+  checklist: ChecklistNode,
+  timeline: TimelineNode,
+  resource: ResourceNode,
+  circle: CircleNode,
+  rectangle: RectangleNode,
+  square: SquareNode,
+  triangle: TriangleNode,
 };
 
-const initialNodes: MindMapNode[] = [
-  {
-    id: '1',
-    type: 'base',
-    data: { 
-      label: 'Main Idea',
-      nodeType: 'title',
-      backgroundColor: 'white',
-      strokeColor: 'black',
-      strokeWidth: 1,
-      strokeStyle: 'solid',
-      fontSize: 'xs',
-      textAlign: 'center',
-      opacity: 1
-    },
-    position: { x: 400, y: 200 },
-  },
-];
-
-const initialEdges: Edge[] = [];
-
 export const MindMap = () => {
-  const [nodes, setNodes, onNodesChange] = useNodesState<MindMapNode>(initialNodes);
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [currentMindMap, setCurrentMindMap] = useState<string>('');
   const [mindMapToDelete, setMindMapToDelete] = useState<string | null>(null);
-  const { toast } = useToast();
+  const [showAdvancedSidebar, setShowAdvancedSidebar] = useState(false);
+  const [selectedNode, setSelectedNode] = useState<string | null>(null);
 
-  const onConnect = useCallback(
-    (params: Connection) => {
-      setEdges((eds) =>
-        addEdge(
-          {
-            ...params,
-            type: 'smoothstep',
-            animated: true,
-            markerEnd: {
-              type: MarkerType.ArrowClosed,
-            },
-          },
-          eds
-        )
-      );
-    },
-    [setEdges]
-  );
+  // Node handlers
+  const { 
+    deleteNode, 
+    updateNodeData, 
+    addNode,
+    copyNode,
+    pasteNode,
+    duplicateNode
+  } = useMindMapNodeHandlers({ 
+    nodes, 
+    setNodes 
+  });
 
-  const deleteNode = useCallback((id: string) => {
-    setNodes((nds) => nds.filter((node) => node.id !== id));
-  }, [setNodes]);
+  // Edge handlers
+  const { selectedEdge, updateEdge, onConnect, onEdgeClick } = useMindMapEdgeHandlers({
+    setEdges
+  });
 
-  const updateNodeData = useCallback((id: string, newData: Partial<BaseNodeData>) => {
-    setNodes((nds) =>
-      nds.map((node) => {
-        if (node.id === id) {
-          return {
-            ...node,
-            data: {
-              ...node.data,
-              ...newData,
-            },
-          };
-        }
-        return node;
-      })
-    );
-  }, [setNodes]);
+  // Storage handlers
+  const {
+    handleExport,
+    createNewMindMap,
+    loadExistingMindMap,
+    handleDeleteMindMap,
+    confirmDeleteMindMap,
+    saveCurrentMindMap
+  } = useMindMapStorage({
+    nodes,
+    edges,
+    setNodes,
+    setEdges,
+    currentMindMap,
+    setCurrentMindMap,
+    setMindMapToDelete,
+    initialNodes
+  });
 
-  const handleExport = () => {
-    if (!currentMindMap) {
-      toast({
-        title: "Error",
-        description: "Please save your mind map before exporting",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    const exportUrl = `/export?name=${encodeURIComponent(currentMindMap)}`;
-    window.open(exportUrl, '_blank');
-  };
-
-  const createNewMindMap = () => {
-    const name = prompt('Enter a name for the new mind map:');
-    if (!name) return;
-
-    const success = saveMindMap({
-      nodes: initialNodes,
-      edges: [],
-      name
-    });
-
-    if (success) {
-      setNodes(initialNodes);
-      setEdges([]);
-      setCurrentMindMap(name);
-      toast({
-        title: "Success",
-        description: `Created new mind map: ${name}`,
-      });
-    } else {
-      toast({
-        title: "Error",
-        description: "Failed to create new mind map",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const loadExistingMindMap = (name: string) => {
-    const data = loadMindMap(name);
-    if (data) {
-      setNodes(data.nodes);
-      setEdges(data.edges);
-      setCurrentMindMap(name);
-      toast({
-        title: "Success",
-        description: `Loaded mind map: ${name}`,
-      });
-    } else {
-      toast({
-        title: "Error",
-        description: `Failed to load mind map: ${name}`,
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleDeleteMindMap = (name: string) => {
-    setMindMapToDelete(name);
-  };
-
-  const confirmDeleteMindMap = () => {
-    if (!mindMapToDelete) return;
-
-    const success = deleteMindMap(mindMapToDelete);
-    if (success) {
-      if (currentMindMap === mindMapToDelete) {
-        setNodes(initialNodes);
-        setEdges([]);
-        setCurrentMindMap('');
-      }
-      toast({
-        title: "Success",
-        description: `Deleted mind map: ${mindMapToDelete}`,
-      });
-    } else {
-      toast({
-        title: "Error",
-        description: `Failed to delete mind map: ${mindMapToDelete}`,
-        variant: "destructive",
-      });
-    }
-    setMindMapToDelete(null);
-  };
-
-  const saveCurrentMindMap = useCallback(() => {
-    if (!currentMindMap) {
-      const name = prompt('Enter a name for the mind map:');
-      if (!name) return;
-      setCurrentMindMap(name);
-      saveMindMap({ nodes, edges, name });
-      toast({
-        title: "Success",
-        description: `Saved mind map as: ${name}`,
-      });
-    } else {
-      saveMindMap({ nodes, edges, name: currentMindMap });
-      toast({
-        title: "Success",
-        description: `Saved changes to: ${currentMindMap}`,
-      });
-    }
-  }, [nodes, edges, currentMindMap, toast]);
-
+  // Assign API to window for global access
   window.mindmapApi = {
     deleteNode,
     updateNodeData,
+    updateEdge,
+    copyNode,
+    pasteNode,
+    duplicateNode
   };
 
-  const addNode = (type: BaseNodeData['nodeType']) => {
-    if (!type) return;
-    
-    const newNode: MindMapNode = {
-      id: `${nodes.length + 1}`,
-      type: 'base',
-      data: { 
-        label: type.charAt(0).toUpperCase() + type.slice(1),
-        nodeType: type,
-        backgroundColor: 'white',
-        strokeColor: 'black',
-        strokeWidth: 1,
-        strokeStyle: 'solid',
-        fontSize: 'xs',
-        textAlign: 'center',
-        opacity: 1
-      },
-      position: {
-        x: Math.random() * 500,
-        y: Math.random() * 500,
-      },
-    };
-
-    setNodes((nds) => [...nds, newNode]);
+  // Toggle between sidebars
+  const toggleSidebar = () => {
+    setShowAdvancedSidebar(!showAdvancedSidebar);
   };
+
+  // Confirm deletion handler for mind maps
+  const handleConfirmDeleteMindMap = () => {
+    confirmDeleteMindMap(mindMapToDelete);
+    setMindMapToDelete(null);
+  };
+
+  // Handle node click to show node settings
+  const onNodeClick = (_: React.MouseEvent, node: any) => {
+    setSelectedNode(node.id);
+  };
+
+  // Get the selected node data
+  const getSelectedNodeData = () => {
+    return nodes.find(node => node.id === selectedNode)?.data;
+  };
+
+  const selectedNodeData = getSelectedNodeData();
+  const nodeType = selectedNodeData?.nodeType;
+  
+  // Check if the selected node is a shape
+  const isShapeNode = nodeType === 'circle' || nodeType === 'rectangle' || nodeType === 'square' || nodeType === 'triangle';
 
   return (
     <SidebarProvider>
       <div className="w-full h-screen flex">
-        <ComponentsSidebar onAddNode={addNode} />
+        {showAdvancedSidebar ? (
+          <AdvancedComponentsSidebar 
+            onAddNode={addNode} 
+            onToggleSidebar={toggleSidebar}
+          />
+        ) : (
+          <ComponentsSidebar 
+            onAddNode={addNode} 
+            onToggleSidebar={toggleSidebar}
+          />
+        )}
         <div className="flex-1 relative">
-          <div className="absolute top-4 right-4 z-10 flex gap-2">
-            <Button onClick={saveCurrentMindMap}>
-              Save
-            </Button>
-            <Button onClick={handleExport} variant="outline">
-              <Share2 className="mr-2 h-4 w-4" />
-              Export
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline">
-                  Load Mind Map
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                {getAllMindMaps().map((name) => (
-                  <DropdownMenuItem
-                    key={name}
-                    className="flex items-center justify-between group"
-                  >
-                    <span onClick={() => loadExistingMindMap(name)} className="flex-1 cursor-pointer">
-                      {name}
-                    </span>
-                    <Trash2
-                      className="h-4 w-4 text-destructive opacity-0 group-hover:opacity-100 cursor-pointer ml-2"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteMindMap(name);
-                      }}
-                    />
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button onClick={createNewMindMap}>
-              <Plus className="mr-2 h-4 w-4" />
-              New
-            </Button>
-          </div>
+          <MindMapTopBar
+            currentMindMap={currentMindMap}
+            saveCurrentMindMap={saveCurrentMindMap}
+            handleExport={handleExport}
+            createNewMindMap={createNewMindMap}
+            loadExistingMindMap={loadExistingMindMap}
+            handleDeleteMindMap={handleDeleteMindMap}
+          />
           <ReactFlow
             nodes={nodes}
             edges={edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onEdgeClick={onEdgeClick}
+            onNodeClick={onNodeClick}
             nodeTypes={nodeTypes}
             fitView
           >
             <Controls />
             <MiniMap />
             <Background gap={12} size={1} />
+            
+            {selectedEdge && edges.find(edge => edge.id === selectedEdge) && (
+              <EdgeSettings 
+                id={selectedEdge} 
+                data={edges.find(edge => edge.id === selectedEdge)?.data || {}} 
+              />
+            )}
           </ReactFlow>
+          
+          {/* Settings Button for specialized nodes - only visible when a specialized node is selected */}
+          {selectedNode && (nodeType === 'timeline' || nodeType === 'checklist' || nodeType === 'resource' || isShapeNode) && (
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button 
+                  className="absolute right-4 top-16 z-10 bg-white shadow-md border"
+                  variant="outline"
+                  size="sm"
+                >
+                  <Settings className="h-4 w-4 mr-1" />
+                  {nodeType === 'timeline' ? 'Timeline' : 
+                   nodeType === 'checklist' ? 'Checklist' : 
+                   nodeType === 'resource' ? 'Resources' : 
+                   'Shape'} Settings
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="w-[90%] max-w-[600px] max-h-[80vh] overflow-y-auto">
+                {nodeType === 'timeline' && selectedNodeData && (
+                  <TimelineSettings nodeId={selectedNode} data={selectedNodeData} />
+                )}
+                
+                {nodeType === 'checklist' && selectedNodeData && (
+                  <ChecklistSettings nodeId={selectedNode} data={selectedNodeData} />
+                )}
+                
+                {nodeType === 'resource' && selectedNodeData && (
+                  <ResourceSettings nodeId={selectedNode} data={selectedNodeData} />
+                )}
+                
+                {isShapeNode && selectedNodeData && (
+                  <ShapeSettings nodeId={selectedNode} data={selectedNodeData} />
+                )}
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
       </div>
 
-      <AlertDialog open={!!mindMapToDelete} onOpenChange={() => setMindMapToDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the mind map
-              "{mindMapToDelete}".
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDeleteMindMap} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <MindMapDeleteDialog
+        mindMapToDelete={mindMapToDelete}
+        setMindMapToDelete={setMindMapToDelete}
+        confirmDeleteMindMap={handleConfirmDeleteMindMap}
+      />
     </SidebarProvider>
   );
 };
